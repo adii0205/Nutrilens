@@ -1,0 +1,10 @@
+{
+  "description": "Analyzes nutrition labels to highlight health risks and benefits using clear visuals and HCI principles, helping users make informed dietary choices.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
