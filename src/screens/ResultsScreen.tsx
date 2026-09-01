@@ -211,7 +211,59 @@ export default function ResultsScreen({
       {/* Tab Content */}
       <div style={{ padding: "0 20px" }}>
         {tab === "overview" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+            {/* Machine Learning Model Prediction Card */}
+            {product.mlPrediction && (
+              <div style={{ ...card, padding: 14, background: "linear-gradient(135deg, #F0F7FF 0%, #FFFFFF 100%)", border: "1px solid rgba(0, 102, 204, 0.25)" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <span style={{ fontSize: 16 }}>🤖</span>
+                    <div>
+                      <p style={{ fontSize: 12, fontWeight: 800, color: "#0052CC", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>ML Model Analysis</p>
+                      <p style={{ fontSize: 10, color: "#5A6472", margin: 0 }}>{product.mlPrediction.modelName}</p>
+                    </div>
+                  </div>
+                  <div style={{ background: "#E6F0FF", border: "1px solid #B3D1FF", borderRadius: 8, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#0052CC" }}>{product.mlPrediction.confidence}% Conf.</span>
+                  </div>
+                </div>
+
+                {/* Score & Grade Display */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "white", padding: 10, borderRadius: 12, border: "1px solid #E8ECEF", marginBottom: 10 }}>
+                  <div>
+                    <p style={{ fontSize: 10, color: "#5A6472", fontWeight: 700, margin: 0, textTransform: "uppercase" }}>ML Predicted Grade</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: product.gradeColor }}>Grade {product.mlPrediction.predictedGrade}</span>
+                      <span style={{ fontSize: 11, color: "#5A6472" }}>(Health Score: {product.mlPrediction.healthScore}/100)</span>
+                    </div>
+                  </div>
+                  {product.mlPrediction.predictedFoodName && (
+                    <div style={{ textAlign: "right" }}>
+                      <p style={{ fontSize: 10, color: "#5A6472", fontWeight: 700, margin: 0, textTransform: "uppercase" }}>Vision ML Class</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: "#0F1720", margin: 0, marginTop: 2 }}>{product.mlPrediction.predictedFoodName}</p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Risk Factors */}
+                {product.mlPrediction.riskFactors && product.mlPrediction.riskFactors.length > 0 && (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: "#5A6472", textTransform: "uppercase", margin: "2px 0" }}>ML Risk Factor Flags:</p>
+                    {product.mlPrediction.riskFactors.map((rf, idx) => (
+                      <div key={idx} style={{
+                        display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8,
+                        background: rf.severity === "good" ? "#E9F7EF" : rf.severity === "high" ? "#FDEAE9" : "#FFF4E0",
+                        border: `1px solid ${rf.severity === "good" ? "#1B7A4333" : rf.severity === "high" ? "#E4483C33" : "#F5A62333"}`
+                      }}>
+                        <span style={{ fontSize: 11 }}>{rf.severity === "good" ? "✅" : rf.severity === "high" ? "⚠️" : "⚡"}</span>
+                        <p style={{ fontSize: 11, color: "#0F1720", margin: 0, flex: 1 }}>{rf.message}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
             {product.nutrients.map((n) => {
               const cfg = ratingConfig[n.rating];
               return (

@@ -4,9 +4,9 @@ import type { AnalyzedProduct, AnalysisMode } from "../types";
 import { startCamera, captureFrame, stopCamera, pickFromGallery } from "../services/cameraService";
 import { extractTextFromImage } from "../services/ocrService";
 import { analyzePackagedFoodImage, analyzePreparedFoodImage, generateAISummary } from "../services/geminiService";
-import { saveScannedProduct, getApiKey, getUserProfile } from "../services/storageService";
+import { analyzeWithMLModel } from "../services/mlService";
 
-type ScanPhase = "idle" | "capturing" | "ocr" | "analyzing" | "generating" | "done" | "error";
+type ScanPhase = "idle" | "capturing" | "ocr" | "analyzing" | "ml" | "generating" | "done" | "error";
 
 export default function ScanScreen({
   navigate,
@@ -80,7 +80,17 @@ export default function ScanScreen({
         product = await analyzePreparedFoodImage(imageDataUrl, setStatusMsg);
       }
 
-      // Step 3: Generate AI summary
+      // Step 3: Run Machine Learning Model Pipeline
+      setPhase("ml");
+      setStatusMsg("Running Python ML Vision & Health Predictor Model...");
+      try {
+        const mlResult = await analyzeWithMLModel(imageDataUrl, product.nutrients, setStatusMsg);
+        product.mlPrediction = mlResult;
+      } catch (mlErr) {
+        console.warn("ML model inference non-fatal issue:", mlErr);
+      }
+
+      // Step 4: Generate AI summary
       setPhase("generating");
       setStatusMsg("Generating health assessment...");
       product.aiSummary = await generateAISummary(product, profile);
