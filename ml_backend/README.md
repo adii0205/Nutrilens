@@ -18,25 +18,19 @@ This directory contains the Machine Learning backend microservice for the NutriL
    - RESTful JSON API endpoints for complete multi-modal inference.
    - Enables CORS for frontend connection.
 
----
-
 ## Quick Start Instructions
 
-### 1. Create Virtual Environment & Install Dependencies
+### 1. Open Terminal in Project Directory
+Make sure your terminal is inside the `d:\ml_project` directory:
 ```bash
-python -m venv venv
-# On Windows PowerShell:
-.\venv\bin\python.exe -m pip install -r requirements.txt
+cd d:\ml_project
 ```
 
-### 2. Train Models (Automated on startup)
+### 2. Run the Machine Learning Server
 ```bash
-python ml_backend/train_models.py
+python ml_backend/server.py
 ```
+> Or for FastAPI with uvicorn:
+> `python -m uvicorn ml_backend.main:app --reload --host 0.0.0.0 --port 8000`
 
-### 3. Run FastAPI Backend Server
-```bash
-python -m uvicorn ml_backend.main:app --reload --host 0.0.0.0 --port 8000
-```
-
-The API will be available at `http://localhost:8000`. API docs can be accessed at `http://localhost:8000/docs`.
+The API will be available at `http://localhost:8000`. API docs (when using FastAPI) can be accessed at `http://localhost:8000/docs`.
