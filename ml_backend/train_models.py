@@ -54,7 +54,7 @@ def train_and_save_models():
     save_path = "ml_backend/models/health_predictor.pkl"
     with open(save_path, "wb") as f:
         pickle.dump(model_payload, f)
-    print(f"✅ Models trained and saved successfully to {save_path}!")
+    print(f"[SUCCESS] Models trained and saved successfully to {save_path}!")
 
 if __name__ == "__main__":
     train_and_save_models()
