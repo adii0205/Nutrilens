@@ -18,3 +18,10 @@ logs/
 # beside it.
 /.plugins/
 /.opencode-skills/
+
+# Python ML Backend
+ml_backend/venv/
+ml_backend/__pycache__/
+ml_backend/models/__pycache__/
+*.pyc
+

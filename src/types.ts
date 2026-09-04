@@ -15,6 +15,31 @@ export interface IngredientExplanation {
   concern: "none" | "low" | "moderate" | "high";
 }
 
+export interface MLRiskFactor {
+  factor: string;
+  severity: "good" | "moderate" | "high";
+  message: string;
+}
+
+export interface MLFeatureImportance {
+  name: string;
+  impact: number;
+  direction: "positive" | "negative";
+}
+
+export interface MLPredictionResult {
+  predictedFoodName?: string;
+  category?: string;
+  predictedGrade: "A" | "B" | "C" | "D" | "F";
+  healthScore: number;
+  confidence: number;
+  modelName: string;
+  modelArchitecture?: string;
+  riskFactors?: MLRiskFactor[];
+  featureImportance?: MLFeatureImportance[];
+  healthNote?: string;
+}
+
 export interface AnalyzedProduct {
   id: string;
   name: string;
@@ -34,6 +59,7 @@ export interface AnalyzedProduct {
   alternatives?: AlternativeProduct[];
   analysisMode: AnalysisMode;
   rawOcrText?: string;
+  mlPrediction?: MLPredictionResult;
 }
 
 export interface AlternativeProduct {
