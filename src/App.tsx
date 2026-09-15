@@ -91,7 +91,7 @@ export default function App() {
           >
             <span style={{ fontSize: 16 }}>🔑</span>
             <span style={{ fontSize: 12, fontWeight: 600, color: "#0F1720", textAlign: "left" }}>
-              Add your Gemini API key to enable AI scanning
+              Add Gemini for optional image suggestions
             </span>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5A6472" strokeWidth="2" strokeLinecap="round">
               <path d="M9 18l6-6-6-6"/>
@@ -103,7 +103,13 @@ export default function App() {
         <div style={{ flex: 1, overflowY: "auto", scrollbarWidth: "none" }}>
           {screen === "home" && <HomeScreen navigate={navigate} navigateWithProduct={navigateWithProduct} />}
           {screen === "scan" && <ScanScreen navigate={navigate} navigateWithProduct={navigateWithProduct} />}
-          {screen === "results" && <ResultsScreen product={analyzedProduct} navigate={navigate} />}
+          {screen === "results" && (
+            <ResultsScreen
+              product={analyzedProduct}
+              navigate={navigate}
+              onProductUpdate={setAnalyzedProduct}
+            />
+          )}
           {screen === "history" && <HistoryScreen navigate={navigate} navigateWithProduct={navigateWithProduct} />}
           {screen === "profile" && <ProfileScreen navigate={navigate} onApiKeyChange={() => setHasApiKey(!!getApiKey())} />}
         </div>

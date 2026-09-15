@@ -4,11 +4,20 @@ import type { AnalyzedProduct, NutrientRating, ChatMessage, IngredientExplanatio
 import { PRODUCTS } from "../data/products";
 import { chatAboutFood, explainIngredients, suggestAlternatives } from "../services/geminiService";
 import { getUserProfile, getApiKey } from "../services/storageService";
+import MealAnalysisView from "../components/MealAnalysisView";
 
 const ratingConfig: Record<NutrientRating, { color: string; bg: string; label: string }> = {
   good: { color: "#1B7A43", bg: "#E9F7EF", label: "GOOD" },
   moderate: { color: "#F5A623", bg: "#FFF4E0", label: "MOD" },
   bad: { color: "#E4483C", bg: "#FDEAE9", label: "HIGH" },
+};
+
+const gradeColors: Record<AnalyzedProduct["grade"], string> = {
+  A: "#1B7A43",
+  B: "#6BAF45",
+  C: "#F5A623",
+  D: "#E4483C",
+  F: "#B91C1C",
 };
 
 const ScoreRing = ({ score, color }: { score: number; color: string }) => {
@@ -42,9 +51,11 @@ const concernColors: Record<string, { color: string; bg: string }> = {
 export default function ResultsScreen({
   product: analyzedProduct,
   navigate,
+  onProductUpdate,
 }: {
   product: AnalyzedProduct | null;
   navigate: (s: Screen, p?: string) => void;
+  onProductUpdate?: (product: AnalyzedProduct) => void;
 }) {
   const [tab, setTab] = useState<"overview" | "nutrients" | "ingredients" | "ai">("overview");
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
@@ -64,7 +75,7 @@ export default function ResultsScreen({
 
   // Load ingredient explanations when switching to ingredients tab
   useEffect(() => {
-    if (tab === "ingredients" && ingredientExplanations.length === 0 && !ingredientsLoading && product.ingredients && getApiKey()) {
+    if (product.analysisMode === "label" && tab === "ingredients" && ingredientExplanations.length === 0 && !ingredientsLoading && product.ingredients && getApiKey()) {
       setIngredientsLoading(true);
       explainIngredients(product.ingredients)
         .then(setIngredientExplanations)
@@ -75,7 +86,7 @@ export default function ResultsScreen({
 
   // Load alternatives when switching to AI tab
   useEffect(() => {
-    if (tab === "ai" && alternatives.length === 0 && !alternativesLoading && getApiKey()) {
+    if (product.analysisMode === "label" && tab === "ai" && alternatives.length === 0 && !alternativesLoading && getApiKey()) {
       setAlternativesLoading(true);
       const profile = getUserProfile();
       suggestAlternatives(product, profile)
@@ -102,6 +113,16 @@ export default function ResultsScreen({
       setChatLoading(false);
     }
   };
+
+  if (product.mealAnalysis) {
+    return (
+      <MealAnalysisView
+        product={{ ...product, mealAnalysis: product.mealAnalysis }}
+        onBack={() => navigate("home")}
+        onProductUpdate={onProductUpdate}
+      />
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 20 }}>
@@ -212,34 +233,38 @@ export default function ResultsScreen({
       <div style={{ padding: "0 20px" }}>
         {tab === "overview" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-            {/* Machine Learning Model Prediction Card */}
+            {/* Analysis engine result card */}
             {product.mlPrediction && (
               <div style={{ ...card, padding: 14, background: "linear-gradient(135deg, #F0F7FF 0%, #FFFFFF 100%)", border: "1px solid rgba(0, 102, 204, 0.25)" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <span style={{ fontSize: 16 }}>🤖</span>
                     <div>
-                      <p style={{ fontSize: 12, fontWeight: 800, color: "#0052CC", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>ML Model Analysis</p>
+                      <p style={{ fontSize: 12, fontWeight: 800, color: "#0052CC", margin: 0, textTransform: "uppercase", letterSpacing: "0.04em" }}>Analysis Engine</p>
                       <p style={{ fontSize: 10, color: "#5A6472", margin: 0 }}>{product.mlPrediction.modelName}</p>
                     </div>
                   </div>
                   <div style={{ background: "#E6F0FF", border: "1px solid #B3D1FF", borderRadius: 8, padding: "2px 8px", display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, color: "#0052CC" }}>{product.mlPrediction.confidence}% Conf.</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, color: "#0052CC" }}>
+                      {product.mlPrediction.confidence === null
+                        ? product.mlPrediction.inferenceSource === "trained_model" ? "Uncalibrated model" : "Prototype baseline"
+                        : `${product.mlPrediction.confidence}% confidence`}
+                    </span>
                   </div>
                 </div>
 
                 {/* Score & Grade Display */}
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", background: "white", padding: 10, borderRadius: 12, border: "1px solid #E8ECEF", marginBottom: 10 }}>
                   <div>
-                    <p style={{ fontSize: 10, color: "#5A6472", fontWeight: 700, margin: 0, textTransform: "uppercase" }}>ML Predicted Grade</p>
+                    <p style={{ fontSize: 10, color: "#5A6472", fontWeight: 700, margin: 0, textTransform: "uppercase" }}>NutriLens Health Grade</p>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 2 }}>
-                      <span style={{ fontSize: 20, fontWeight: 900, color: product.gradeColor }}>Grade {product.mlPrediction.predictedGrade}</span>
+                      <span style={{ fontSize: 20, fontWeight: 900, color: gradeColors[product.mlPrediction.predictedGrade] }}>Grade {product.mlPrediction.predictedGrade}</span>
                       <span style={{ fontSize: 11, color: "#5A6472" }}>(Health Score: {product.mlPrediction.healthScore}/100)</span>
                     </div>
                   </div>
                   {product.mlPrediction.predictedFoodName && (
                     <div style={{ textAlign: "right" }}>
-                      <p style={{ fontSize: 10, color: "#5A6472", fontWeight: 700, margin: 0, textTransform: "uppercase" }}>Vision ML Class</p>
+                      <p style={{ fontSize: 10, color: "#5A6472", fontWeight: 700, margin: 0, textTransform: "uppercase" }}>Image Baseline Class</p>
                       <p style={{ fontSize: 12, fontWeight: 700, color: "#0F1720", margin: 0, marginTop: 2 }}>{product.mlPrediction.predictedFoodName}</p>
                     </div>
                   )}
@@ -248,7 +273,7 @@ export default function ResultsScreen({
                 {/* Risk Factors */}
                 {product.mlPrediction.riskFactors && product.mlPrediction.riskFactors.length > 0 && (
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                    <p style={{ fontSize: 10, fontWeight: 700, color: "#5A6472", textTransform: "uppercase", margin: "2px 0" }}>ML Risk Factor Flags:</p>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: "#5A6472", textTransform: "uppercase", margin: "2px 0" }}>Scoring factor flags:</p>
                     {product.mlPrediction.riskFactors.map((rf, idx) => (
                       <div key={idx} style={{
                         display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", borderRadius: 8,
