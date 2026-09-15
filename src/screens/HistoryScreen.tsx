@@ -79,9 +79,11 @@ export default function HistoryScreen({
 
     if (!matchesSearch) return false;
 
-    if (filter === "Grade A") return p.grade === "A";
-    if (filter === "Grade B") return p.grade === "B";
-    if (filter === "Grade C/D") return p.grade === "C" || p.grade === "D" || p.grade === "F";
+    if (filter === "Grade A") return !p.mealAnalysis && p.grade === "A";
+    if (filter === "Grade B") return !p.mealAnalysis && p.grade === "B";
+    if (filter === "Grade C/D") {
+      return !p.mealAnalysis && (p.grade === "C" || p.grade === "D" || p.grade === "F");
+    }
     if (filter === "Alerts") {
       const hasAllergen = p.allergens.some((a) =>
         profile.allergens.some((pa) => a.toLowerCase().includes(pa.toLowerCase()))
@@ -106,7 +108,7 @@ export default function HistoryScreen({
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
         <div>
           <h1 style={{ fontSize: 24, fontWeight: 800, color: "#0F1720", margin: 0 }}>Scan History</h1>
-          <p style={{ fontSize: 13, color: "#5A6472", margin: "4px 0 0" }}>{historyItems.length} products scanned</p>
+          <p style={{ fontSize: 13, color: "#5A6472", margin: "4px 0 0" }}>{historyItems.length} scans</p>
         </div>
         {historyItems.length > 0 && (
           <button
@@ -134,7 +136,7 @@ export default function HistoryScreen({
         </svg>
         <input
           type="text"
-          placeholder="Search products or brands…"
+          placeholder="Search products, meals, or dishes…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           style={{
@@ -168,6 +170,7 @@ export default function HistoryScreen({
         {filtered.map((item) => {
           const p = item.product;
           if (!p) return null;
+          const isMeal = Boolean(p.mealAnalysis);
           return (
             <button
               key={item.id}
@@ -182,11 +185,12 @@ export default function HistoryScreen({
             >
               <div style={{
                 width: 44, height: 44, borderRadius: 12,
-                background: p.gradeBg, color: p.gradeColor,
+                background: isMeal ? "#FFF4E0" : p.gradeBg,
+                color: isMeal ? "#B46A00" : p.gradeColor,
                 display: "flex", alignItems: "center", justifyContent: "center",
                 fontSize: 20, fontWeight: 900, flexShrink: 0,
               }}>
-                {p.grade}
+                {isMeal ? "🍛" : p.grade}
               </div>
               <div style={{ flex: 1, minWidth: 0 }}>
                 <p style={{ fontSize: 14, fontWeight: 600, color: "#0F1720", margin: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
@@ -197,7 +201,9 @@ export default function HistoryScreen({
                 </p>
               </div>
               <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-                <span style={{ fontSize: 17, fontWeight: 800, color: p.gradeColor }}>{p.score}</span>
+                <span style={{ fontSize: isMeal ? 11 : 17, fontWeight: 800, color: isMeal ? "#B46A00" : p.gradeColor }}>
+                  {isMeal ? `${Math.round(p.kcal)} kcal` : p.score}
+                </span>
                 <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                   {p.allergens.length > 0 && (
                     <div style={{ width: 18, height: 18, borderRadius: "50%", background: "#FDEAE9", display: "flex", alignItems: "center", justifyContent: "center" }}>

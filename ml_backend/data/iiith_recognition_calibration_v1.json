@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "1.0.0",
+  "indexVersion": "recognition_index_v1",
+  "indexSha256": "1e7944583ba13fab807f925b8e300f5188d88b2c8c06b2e94a99006ccea768cc",
+  "model": {
+    "architecture": "ViT-B-32",
+    "pretrained": "laion2b_s34b_b79k"
+  },
+  "selection": {
+    "strategy": "centroid",
+    "confidenceMethod": "top1_minus_top2_margin",
+    "threshold": 0.038652,
+    "targetCalibrationPrecision": 0.8
+  },
+  "heldOutResults": {
+    "evaluationCropCount": 5859,
+    "top1Accuracy": 0.561871,
+    "top5Accuracy": 0.868408,
+    "macroTop1Accuracy": 0.657527,
+    "acceptedCount": 1909,
+    "coverage": 0.325824,
+    "acceptedAccuracy": 0.803562
+  },
+  "evaluation": {
+    "dataset": "IIIT-H Indian Thali Dataset test split",
+    "calibrationCropCount": 5647,
+    "grouping": "SHA-256 partition by source image stem",
+    "reportSha256": "817a95df5d7bd2f50822aea4357be3a62d2c63e0e4e214efc5c1965ac6f62ed1"
+  },
+  "combinedVerification": {
+    "report": ".ml_artifacts/evaluation/combined_pipeline_evaluation_v1.json",
+    "targetPrecision": 0.9,
+    "clipVerifierTopK": 10,
+    "segmentConfidenceThreshold": 0.445198,
+    "evaluationRegionCount": 5091,
+    "evaluationPrecision": 0.994877,
+    "evaluationCoverage": 0.958554,
+    "detectionRecallAtIoU50": 0.981228,
+    "classCorrectDetectionRecallAtIoU50": 0.977708,
+    "mappingSuggestionPrecision": 0.993714
+  },
+  "limitations": [
+    "The threshold measures selective accuracy on known ITD classes; it is not an out-of-distribution food detector.",
+    "Ground-truth masks supplied crops for the crop-only evaluation; the combined evaluation uses regions predicted from each full meal image.",
+    "Nutrients are looked up after dish recognition and are not predicted directly by OpenCLIP."
+  ]
+}

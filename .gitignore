@@ -3,6 +3,7 @@ dist/
 build/
 .cache/
 .env*
+!.env.example
 .vite/
 vite.config.*.timestamp-*
 *.tsbuildinfo
@@ -24,4 +25,7 @@ ml_backend/venv/
 ml_backend/__pycache__/
 ml_backend/models/__pycache__/
 *.pyc
+
+# Downloaded ML datasets, checkpoints, and generated embeddings
+/.ml_artifacts/
 

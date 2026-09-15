@@ -61,57 +61,70 @@ export function parseNutritionLabel(ocrText: string): ParsedNutrition {
   })();
 
   result.calories = extractNumber([
+    /calories?\s*(?:\(\s*k?cal\s*\))?\s*[:\-]?\s*(\d+(?:\.\d+)?)/,
     /calories[:\s]*(\d+)/,
     /energy[:\s]*(\d+)\s*kcal/,
     /(\d+)\s*kcal/,
   ]);
 
   result.totalFat = extractNumber([
+    /total\s*fat\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /total\s*fat[:\s]*([\d.]+)\s*g/,
     /fat[:\s]*([\d.]+)\s*g/,
   ]);
 
   result.saturatedFat = extractNumber([
+    /saturated\s*fat\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /saturated\s*fat[:\s]*([\d.]+)\s*g/,
     /sat\.?\s*fat[:\s]*([\d.]+)\s*g/,
   ]);
 
   result.transFat = extractNumber([
+    /trans\s*fat\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /trans\s*fat[:\s]*([\d.]+)\s*g/,
   ]);
 
   result.cholesterol = extractNumber([
+    /cholesterol\s*(?:\(\s*mg\s*\))\s*[:\-]?\s*([\d.]+)/,
     /cholesterol[:\s]*([\d.]+)\s*mg/,
   ]);
 
-  result.sodium = extractNumber([
+  const sodiumMg = extractNumber([
+    /sodium\s*(?:\(\s*mg\s*\))\s*[:\-]?\s*([\d.]+)/,
     /sodium[:\s]*([\d.]+)\s*mg/,
+  ]);
+  const saltGrams = extractNumber([
+    /salt\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /salt[:\s]*([\d.]+)\s*g/,
   ]);
+  // Sodium is about 40% of salt by mass. Keep the matched unit explicit so a
+  // valid low value such as 5mg sodium is never mistaken for 5g salt.
+  result.sodium = sodiumMg ?? (
+    saltGrams === undefined ? undefined : Math.round(saltGrams * 400)
+  );
 
   result.totalCarbs = extractNumber([
+    /total\s*carb(?:ohydrate)?s?\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /total\s*carb(?:ohydrate)?s?[:\s]*([\d.]+)\s*g/,
     /carb(?:ohydrate)?s?[:\s]*([\d.]+)\s*g/,
   ]);
 
   result.dietaryFiber = extractNumber([
+    /dietary\s*fib(?:er|re)\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /dietary\s*fib(?:er|re)[:\s]*([\d.]+)\s*g/,
     /fib(?:er|re)[:\s]*([\d.]+)\s*g/,
   ]);
 
   result.sugars = extractNumber([
+    /(?:total\s*)?sugars?\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /sugars?[:\s]*([\d.]+)\s*g/,
     /of\s*which\s*sugars?[:\s]*([\d.]+)\s*g/,
   ]);
 
   result.protein = extractNumber([
+    /protein\s*(?:\(\s*g\s*\))\s*[:\-]?\s*([\d.]+)/,
     /protein[:\s]*([\d.]+)\s*g/,
   ]);
-
-  // If sodium was parsed from "salt" in grams, convert to mg
-  if (result.sodium && result.sodium < 10) {
-    result.sodium = Math.round(result.sodium * 400);
-  }
 
   return result;
 }

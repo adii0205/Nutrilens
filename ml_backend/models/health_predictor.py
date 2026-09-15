@@ -1,109 +1,147 @@
-import os
+import math
 import pickle
+from pathlib import Path
+
 
 GRADE_LABELS = ["A", "B", "C", "D", "F"]
+REQUIRED_NUTRIENTS = (
+    "calories",
+    "saturatedFat",
+    "sugars",
+    "sodium",
+    "fiber",
+    "protein",
+)
 
-class HealthPredictorML:
-    def __init__(self, model_path="ml_backend/models/health_predictor.pkl"):
-        self.model_path = model_path
+
+class HealthPredictor:
+    """Run a trained estimator when available, otherwise an honest rule baseline."""
+
+    def __init__(self, model_path=None):
+        self.model_path = Path(model_path) if model_path else Path(__file__).with_name("health_predictor.pkl")
         self.payload = None
+        self.model_loaded = False
         self.load_model()
 
     def load_model(self):
-        if os.path.exists(self.model_path):
+        self.payload = None
+        self.model_loaded = False
+        if not self.model_path.exists():
+            print("[INFO] No trained health model found; using the rule-based baseline.")
+            return
+
+        try:
+            with self.model_path.open("rb") as model_file:
+                payload = pickle.load(model_file)
+        except Exception as exc:
+            print(f"[WARNING] Could not load health model ({exc}); using the rule baseline.")
+            return
+
+        if not isinstance(payload, dict) or not {"classifier", "regressor"}.issubset(payload):
+            print("[INFO] The existing artifact contains metadata only; using the rule baseline.")
+            return
+
+        self.payload = payload
+        self.model_loaded = True
+        print(f"[SUCCESS] Loaded trained health model from {self.model_path}")
+
+    @staticmethod
+    def _validated_features(nutrients):
+        if not isinstance(nutrients, dict):
+            raise ValueError("Nutrients must be provided as an object.")
+
+        missing = [name for name in REQUIRED_NUTRIENTS if nutrients.get(name) is None]
+        if missing:
+            raise ValueError(f"Missing required nutrients: {', '.join(missing)}")
+
+        values = []
+        for name in REQUIRED_NUTRIENTS:
             try:
-                with open(self.model_path, "rb") as f:
-                    self.payload = pickle.load(f)
-                print(f"[SUCCESS] Loaded trained ML Health Predictor from {self.model_path}")
-            except Exception as e:
-                print(f"[WARNING] Error loading model file ({e}). Will use rule fallback.")
-                self.payload = None
+                value = float(nutrients[name])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Nutrient '{name}' must be numeric.") from exc
+            if not math.isfinite(value) or value < 0:
+                raise ValueError(f"Nutrient '{name}' must be a finite, non-negative number.")
+            values.append(value)
+        return values
+
+    def predict(self, nutrients):
+        features = self._validated_features(nutrients)
+        calories, sat_fat, sugars, sodium, fiber, protein = features
+
+        if self.model_loaded:
+            classifier = self.payload["classifier"]
+            regressor = self.payload["regressor"]
+            raw_grade = classifier.predict([features])[0]
+            grade = GRADE_LABELS[int(raw_grade)] if isinstance(raw_grade, (int, float)) else str(raw_grade)
+            if grade not in GRADE_LABELS:
+                raise ValueError(f"Trained model returned unsupported grade '{grade}'.")
+            health_score = max(0, min(100, round(float(regressor.predict([features])[0]), 1)))
+            confidence = None
+            if hasattr(classifier, "predict_proba"):
+                confidence = round(float(max(classifier.predict_proba([features])[0])) * 100, 1)
+            model_name = self.payload.get("model_name", "Trained health prediction model")
+            source = "trained_model"
+            explanation_method = "model_feature_importance"
         else:
-            print(f"[INFO] Model file {self.model_path} not found. Running training on startup...")
+            negative = (
+                (calories / 800 * 25)
+                + (sat_fat / 25 * 25)
+                + (sugars / 50 * 25)
+                + (sodium / 2000 * 25)
+            )
+            positive = (fiber / 15 * 50) + (protein / 40 * 50)
+            health_score = round(max(5, min(98, 100 - negative + positive * 0.4)), 1)
 
-    def predict(self, nutrients: dict):
-        """
-        Accepts dict with keys: calories, saturatedFat, sugars, sodium, fiber, protein
-        Returns ML grade prediction, health index score, confidence, and risk factors.
-        """
-        calories = float(nutrients.get("calories", 0))
-        sat_fat = float(nutrients.get("saturatedFat", 0))
-        sugars = float(nutrients.get("sugars", 0))
-        sodium = float(nutrients.get("sodium", 0))
-        fiber = float(nutrients.get("fiber", 0))
-        protein = float(nutrients.get("protein", 0))
+            if health_score >= 80:
+                grade = "A"
+            elif health_score >= 62:
+                grade = "B"
+            elif health_score >= 45:
+                grade = "C"
+            elif health_score >= 28:
+                grade = "D"
+            else:
+                grade = "F"
 
-        features = [calories, sat_fat, sugars, sodium, fiber, protein]
+            confidence = None
+            model_name = "NutriLens rule-based health baseline"
+            source = "rule_based"
+            explanation_method = "rule_contribution"
 
-        if self.payload is not None and "classifier" in self.payload:
-            clf = self.payload["classifier"]
-            reg = self.payload["regressor"]
-
-            pred_grade_idx = int(clf.predict([features])[0])
-            confidence = 96.5
-            health_score = round(float(reg.predict([features])[0]), 1)
-            health_score = max(0, min(100, health_score))
-            grade = GRADE_LABELS[pred_grade_idx]
-        else:
-            # Formula formulation based on trained Nutri-Score standards
-            neg = (calories / 800 * 25) + (sat_fat / 25 * 25) + (sugars / 50 * 25) + (sodium / 2000 * 25)
-            pos = (fiber / 15 * 50) + (protein / 40 * 50)
-            health_score = round(max(5, min(98, 100 - neg + (pos * 0.4))), 1)
-
-            if health_score >= 80: grade = "A"
-            elif health_score >= 62: grade = "B"
-            elif health_score >= 45: grade = "C"
-            elif health_score >= 28: grade = "D"
-            else: grade = "F"
-
-            confidence = 94.8
-            neg = (calories / 800 * 25) + (sat_fat / 25 * 25) + (sugars / 50 * 25) + (sodium / 2000 * 25)
-            pos = (fiber / 15 * 50) + (protein / 40 * 50)
-            health_score = round(max(5, min(98, 100 - neg + (pos * 0.4))), 1)
-
-            if health_score >= 80: grade = "A"
-            elif health_score >= 62: grade = "B"
-            elif health_score >= 45: grade = "C"
-            elif health_score >= 28: grade = "D"
-            else: grade = "F"
-
-            confidence = 94.2
-
-        # Risk Factors & Alerts Evaluation
         risk_factors = []
         if sat_fat > 5.0:
             risk_factors.append({
                 "factor": "High Saturated Fat",
                 "severity": "high" if sat_fat > 10.0 else "moderate",
-                "message": f"Saturated fat ({sat_fat}g/100g) exceeds target threshold (5.0g)."
+                "message": f"Saturated fat ({sat_fat}g/100g) exceeds the 5.0g project threshold.",
             })
         if sugars > 12.5:
             risk_factors.append({
-                "factor": "Excess Sugar Content",
+                "factor": "Elevated Sugar",
                 "severity": "high" if sugars > 22.0 else "moderate",
-                "message": f"Sugar content ({sugars}g/100g) is elevated."
+                "message": f"Sugar content is {sugars}g/100g.",
             })
         if sodium > 600:
             risk_factors.append({
                 "factor": "Elevated Sodium",
                 "severity": "high" if sodium > 1000 else "moderate",
-                "message": f"Sodium level ({sodium}mg/100g) may contribute to blood pressure strain."
+                "message": f"Sodium content is {sodium}mg/100g.",
             })
         if fiber >= 3.0:
             risk_factors.append({
-                "factor": "High Fiber Boost",
+                "factor": "Fiber Contribution",
                 "severity": "good",
-                "message": f"Excellent fiber content ({fiber}g/100g) supports digestive health."
+                "message": f"Fiber contributes positively at {fiber}g/100g.",
             })
         if protein >= 8.0:
             risk_factors.append({
-                "factor": "High Protein Content",
+                "factor": "Protein Contribution",
                 "severity": "good",
-                "message": f"Substantial protein ({protein}g/100g) aids muscle maintenance."
+                "message": f"Protein contributes positively at {protein}g/100g.",
             })
 
-        # Feature Importance Analysis (XAI)
-        feature_importance = [
+        factor_contributions = [
             {"name": "Calories", "impact": round(calories / 800 * 30, 1), "direction": "negative"},
             {"name": "Saturated Fat", "impact": round(sat_fat / 25 * 30, 1), "direction": "negative"},
             {"name": "Sugars", "impact": round(sugars / 50 * 25, 1), "direction": "negative"},
@@ -117,6 +155,14 @@ class HealthPredictorML:
             "healthScore": health_score,
             "confidence": confidence,
             "riskFactors": risk_factors,
-            "featureImportance": feature_importance,
-            "modelName": "RandomForest + GradientBoosting ML Ensemble"
+            # Kept for frontend compatibility; explanationMethod makes its
+            # meaning explicit until genuine model explanations are added.
+            "featureImportance": factor_contributions,
+            "explanationMethod": explanation_method,
+            "modelName": model_name,
+            "inferenceSource": source,
         }
+
+
+# Compatibility alias for existing imports outside this repository.
+HealthPredictorML = HealthPredictor

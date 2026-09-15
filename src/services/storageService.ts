@@ -47,6 +47,21 @@ export function saveScannedProduct(product: AnalyzedProduct): ScanHistoryItem {
   return item;
 }
 
+export function updateScannedProduct(product: AnalyzedProduct): boolean {
+  const history = getHistory();
+  let updated = false;
+  const nextHistory = history.map((item) => {
+    if (item.product?.id !== product.id) return item;
+    updated = true;
+    return { ...item, product };
+  });
+
+  if (updated) {
+    localStorage.setItem(KEYS.HISTORY, JSON.stringify(nextHistory));
+  }
+  return updated;
+}
+
 export function deleteHistoryItem(id: string): void {
   const history = getHistory().filter((h) => h.id !== id);
   localStorage.setItem(KEYS.HISTORY, JSON.stringify(history));
@@ -80,7 +95,9 @@ export function getHistoryStats() {
   today.setHours(0, 0, 0, 0);
 
   const todayScans = history.filter((h) => new Date(h.scannedAt) >= today);
-  const allScores = history.map((h) => h.product.score);
+  const allScores = history
+    .filter((h) => !h.product.mealAnalysis)
+    .map((h) => h.product.score);
   const avgScore = allScores.length > 0 ? Math.round(allScores.reduce((a, b) => a + b, 0) / allScores.length) : 0;
 
   const profile = getUserProfile();
@@ -98,6 +115,7 @@ export function getHistoryStats() {
     totalScans: history.length,
     todayScans: todayScans.length,
     avgScore,
+    gradedScans: allScores.length,
     alertCount,
   };
 }

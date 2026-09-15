@@ -1,15 +1,32 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import type { Screen } from "../App";
-import type { AnalyzedProduct, AnalysisMode } from "../types";
+import type {
+  AnalyzedProduct,
+  AnalysisMode,
+  IndianDishOption,
+  IndianMealAnalysis,
+  MealItemInput,
+} from "../types";
+import MealConfirmationPanel from "../components/MealConfirmationPanel";
 import { startCamera, captureFrame, stopCamera, pickFromGallery } from "../services/cameraService";
-import { extractTextFromImage } from "../services/ocrService";
-import { analyzePackagedFoodImage, analyzePreparedFoodImage, generateAISummary } from "../services/geminiService";
+import { extractTextFromImage, parseNutritionLabel } from "../services/ocrService";
+import {
+  analyzePackagedFoodImage,
+  generateAISummary,
+  suggestIndianMealItems,
+} from "../services/geminiService";
+import {
+  analyzeIndianMeal,
+  getIndianDishCatalogue,
+  mealAnalysisToProduct,
+  recalculateIndianMeal,
+} from "../services/mealService";
 import { analyzeWithMLModel } from "../services/mlService";
 
-import { buildNutrients, calculateNutriScore, getGradeColors } from "../services/nutritionScoringService";
+import { buildNutrients, getGradeColors } from "../services/nutritionScoringService";
 import { saveScannedProduct, getApiKey, getUserProfile } from "../services/storageService";
 
-type ScanPhase = "idle" | "capturing" | "ocr" | "analyzing" | "ml" | "generating" | "done" | "error";
+type ScanPhase = "idle" | "capturing" | "ocr" | "analyzing" | "ml" | "generating" | "confirming" | "done" | "error";
 
 export default function ScanScreen({
   navigate,
@@ -26,6 +43,11 @@ export default function ScanScreen({
   const [errorMsg, setErrorMsg] = useState("");
   const [cameraActive, setCameraActive] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [pendingMeal, setPendingMeal] = useState<IndianMealAnalysis | null>(null);
+  const [dishCatalogue, setDishCatalogue] = useState<IndianDishOption[]>([]);
+  const [mealSuggestedItems, setMealSuggestedItems] = useState<MealItemInput[]>([]);
+  const [mealConfirmationError, setMealConfirmationError] = useState("");
+  const [mealConfirmationLoading, setMealConfirmationLoading] = useState(false);
 
   const initCamera = useCallback(async () => {
     if (!videoRef.current) return;
@@ -38,12 +60,53 @@ export default function ScanScreen({
   }, []);
 
   useEffect(() => {
-    initCamera();
+    if (phase === "idle" && !capturedImage && !streamRef.current) {
+      void initCamera();
+    }
+  }, [phase, capturedImage, initCamera]);
+
+  useEffect(() => {
     return () => {
       stopCamera(streamRef.current);
       streamRef.current = null;
     };
-  }, [initCamera]);
+  }, []);
+
+  const finishAnalysis = (product: AnalyzedProduct) => {
+    saveScannedProduct(product);
+    setPhase("done");
+    setStatusMsg("Analysis complete!");
+
+    window.setTimeout(() => {
+      navigateWithProduct("results", product);
+    }, 600);
+  };
+
+  const requestMealConfirmation = async (
+    analysis: IndianMealAnalysis,
+    imageDataUrl: string,
+  ) => {
+    setPendingMeal(analysis);
+    setStatusMsg("Loading supported Indian dishes...");
+    const dishes = await getIndianDishCatalogue();
+    if (dishes.length === 0) {
+      throw new Error("The backend dish catalogue is empty. Add supported dishes before scanning a meal.");
+    }
+    setDishCatalogue(dishes);
+
+    let suggestions: MealItemInput[] = [];
+    if (getApiKey()) {
+      setStatusMsg("Identifying likely dishes for you to confirm...");
+      try {
+        suggestions = await suggestIndianMealItems(imageDataUrl, dishes);
+      } catch {
+        suggestions = [];
+      }
+    }
+    setMealSuggestedItems(suggestions);
+    setPhase("confirming");
+    setStatusMsg("Confirm the dishes and portions visible in the photo.");
+  };
 
   const processImage = async (imageDataUrl: string) => {
     setCapturedImage(imageDataUrl);
@@ -51,31 +114,43 @@ export default function ScanScreen({
     const profile = getUserProfile();
 
     try {
+      if (mode === "food") {
+        setPhase("analyzing");
+        setStatusMsg("Checking the meal with the Indian dish pipeline...");
+        const mealAnalysis = await analyzeIndianMeal(imageDataUrl);
+
+        if (
+          mealAnalysis.requiresUserConfirmation ||
+          mealAnalysis.requiresPortionConfirmation ||
+          mealAnalysis.items.length === 0
+        ) {
+          await requestMealConfirmation(mealAnalysis, imageDataUrl);
+          return;
+        }
+
+        finishAnalysis(mealAnalysisToProduct(imageDataUrl, mealAnalysis));
+        return;
+      }
+
       let product: AnalyzedProduct;
 
       if (apiKey) {
-        if (mode === "label") {
-          setPhase("ocr");
-          setStatusMsg("Extracting text from label...");
-          let ocrText = "";
-          try {
-            const ocr = await extractTextFromImage(imageDataUrl, setStatusMsg);
-            ocrText = ocr.text;
-          } catch {
-            ocrText = "";
-          }
-
-          setPhase("analyzing");
-          setStatusMsg("AI analyzing nutritional data...");
-          product = await analyzePackagedFoodImage(imageDataUrl, ocrText, setStatusMsg);
-        } else {
-          setPhase("analyzing");
-          setStatusMsg("Identifying food items...");
-          product = await analyzePreparedFoodImage(imageDataUrl, setStatusMsg);
+        setPhase("ocr");
+        setStatusMsg("Extracting text from label...");
+        let ocrText = "";
+        try {
+          const ocr = await extractTextFromImage(imageDataUrl, setStatusMsg);
+          ocrText = ocr.text;
+        } catch {
+          ocrText = "";
         }
 
+        setPhase("analyzing");
+        setStatusMsg("AI analyzing nutritional data...");
+        product = await analyzePackagedFoodImage(imageDataUrl, ocrText, setStatusMsg);
+
         setPhase("ml");
-        setStatusMsg("Running Python ML Vision & Health Predictor Model...");
+        setStatusMsg("Running the Python image baseline and health scoring pipeline...");
         try {
           const mlResult = await analyzeWithMLModel(imageDataUrl, product.nutrients, setStatusMsg);
           product.mlPrediction = mlResult;
@@ -87,10 +162,10 @@ export default function ScanScreen({
         setStatusMsg("Generating health assessment...");
         product.aiSummary = await generateAISummary(product, profile);
       } else {
-        // Direct Python ML Model & OCR Scanning Pipeline (No API Key Required)
+        // Direct Python baseline & OCR pipeline (no Gemini key required).
         setPhase("ml");
-        setStatusMsg("Running Python Machine Learning Vision & Health Engine...");
-        
+        setStatusMsg("Extracting label data and running the Python analysis backend...");
+
         let ocrText = "";
         try {
           const ocr = await extractTextFromImage(imageDataUrl, setStatusMsg);
@@ -99,46 +174,105 @@ export default function ScanScreen({
           ocrText = "";
         }
 
-        const mlResult = await analyzeWithMLModel(imageDataUrl, undefined, setStatusMsg);
-        
-        const estNutrients = (mlResult as { estimatedNutrients?: Record<string, number> }).estimatedNutrients || {
-          calories: 220, saturatedFat: 3.5, sugars: 12.0, sodium: 380, fiber: 3.0, protein: 7.0
-        };
+        if (
+          mode === "label" &&
+          !/(nutrition|calories|energy|sodium|protein|sugar|fat)/i.test(ocrText)
+        ) {
+          throw new Error(
+            "No nutrition table was detected. For a photo of a prepared meal, select Indian meal instead of Package.",
+          );
+        }
 
-        const nutrients = buildNutrients(estNutrients);
-        const { score, grade } = calculateNutriScore(nutrients);
+        const parsedLabel = mode === "label" && ocrText
+          ? parseNutritionLabel(ocrText)
+          : undefined;
+        if (mode === "label" && parsedLabel) {
+          const requiredValues = [
+            ["calories", parsedLabel.calories],
+            ["saturated fat", parsedLabel.saturatedFat],
+            ["sugars", parsedLabel.sugars],
+            ["sodium", parsedLabel.sodium],
+            ["fibre", parsedLabel.dietaryFiber],
+            ["protein", parsedLabel.protein],
+          ] as const;
+          const missingValues = requiredValues
+            .filter(([, value]) => value === undefined)
+            .map(([name]) => name);
+          if (missingValues.length > 0) {
+            throw new Error(
+              `OCR could not read: ${missingValues.join(", ")}. Move closer, keep the table straight, and avoid glare.`,
+            );
+          }
+        }
+        const parsedNutrients = parsedLabel
+          ? buildNutrients({
+              calories: parsedLabel.calories,
+              saturatedFat: parsedLabel.saturatedFat,
+              sugars: parsedLabel.sugars,
+              sodium: parsedLabel.sodium,
+              fiber: parsedLabel.dietaryFiber,
+              protein: parsedLabel.protein,
+            })
+          : undefined;
+
+        const mlResult = await analyzeWithMLModel(imageDataUrl, parsedNutrients, setStatusMsg);
+        if (mode === "label" && mlResult.nutrientSource !== "provided_label_values") {
+          throw new Error(
+            "The backend did not receive the parsed label values. Please try the scan again.",
+          );
+        }
+
+        const nutrientsUsed = mlResult.nutrientsUsed ?? mlResult.estimatedNutrients;
+        if (!nutrientsUsed) {
+          throw new Error("The analysis backend did not return the nutrients used for scoring.");
+        }
+
+        const nutrients = buildNutrients(nutrientsUsed);
+        const score = mlResult.healthScore;
+        const grade = mlResult.predictedGrade;
         const { gradeColor, gradeBg } = getGradeColors(grade);
 
         product = {
           id: `product_${Date.now()}`,
           name: mlResult.predictedFoodName || "Scanned Food Item",
-          brand: mlResult.category || "ML Verified Classification",
+          brand: mlResult.category || "Prototype image baseline",
           score,
           grade,
           gradeColor,
           gradeBg,
-          kcal: estNutrients.calories || 200,
-          servingSize: "1 serving (100g)",
-          allergens: [],
+          kcal: nutrientsUsed.calories,
+          servingSize: mode === "label" ? "Per 100g (from label OCR)" : "Estimated profile per 100g",
+          allergens: mlResult.allergens ?? [],
           nutrients,
-          aiSummary: mlResult.healthNote || "Analysis powered by MobileNetV3 Vision ML & Random Forest Health Risk Predictor.",
+          aiSummary: mlResult.healthNote || "Prototype result from an image heuristic and transparent nutrient scoring baseline.",
           image: imageDataUrl,
-          ingredients: ocrText || "OCR Text Extraction & ML Feature Vectors processed.",
+          ingredients: ocrText || "No ingredient text was extracted.",
           analysisMode: mode,
           mlPrediction: mlResult,
         };
       }
 
-      saveScannedProduct(product);
-      setPhase("done");
-      setStatusMsg("Analysis complete!");
-
-      setTimeout(() => {
-        navigateWithProduct("results", product);
-      }, 600);
+      finishAnalysis(product);
     } catch (err: unknown) {
       setPhase("error");
       setErrorMsg(err instanceof Error ? err.message : "Analysis failed. Please try again.");
+    }
+  };
+
+  const handleMealConfirmation = async (items: MealItemInput[]) => {
+    if (!capturedImage) return;
+    setMealConfirmationLoading(true);
+    setMealConfirmationError("");
+    try {
+      const analysis = await recalculateIndianMeal(items);
+      setPendingMeal(analysis);
+      finishAnalysis(mealAnalysisToProduct(capturedImage, analysis));
+    } catch (err: unknown) {
+      setMealConfirmationError(
+        err instanceof Error ? err.message : "The meal could not be recalculated.",
+      );
+    } finally {
+      setMealConfirmationLoading(false);
     }
   };
 
@@ -168,12 +302,29 @@ export default function ScanScreen({
     }
   };
 
-  const handleRetry = () => {
+  const resetScanner = (nextMode: AnalysisMode = mode) => {
+    stopCamera(streamRef.current);
+    streamRef.current = null;
+    setCameraActive(false);
+    setMode(nextMode);
     setCapturedImage(null);
+    setPendingMeal(null);
+    setDishCatalogue([]);
+    setMealSuggestedItems([]);
+    setMealConfirmationError("");
+    setMealConfirmationLoading(false);
     setPhase("idle");
     setStatusMsg("");
     setErrorMsg("");
-    initCamera();
+  };
+
+  const handleRetry = () => {
+    resetScanner();
+  };
+
+  const handleModeChange = (nextMode: AnalysisMode) => {
+    if (nextMode === mode || (phase !== "idle" && phase !== "error")) return;
+    resetScanner(nextMode);
   };
 
   const phaseColors: Record<ScanPhase, string> = {
@@ -181,7 +332,9 @@ export default function ScanScreen({
     capturing: "#F5A623",
     ocr: "#F5A623",
     analyzing: "#F5A623",
+    ml: "#0052CC",
     generating: "#1B7A43",
+    confirming: "#F5A623",
     done: "#1B7A43",
     error: "#E4483C",
   };
@@ -221,7 +374,7 @@ export default function ScanScreen({
         )}
 
         {/* Top overlay */}
-        <div className="absolute top-0 left-0 right-0 flex items-center justify-between px-5 py-4">
+        <div className="absolute top-0 left-0 right-0 z-10 flex items-center justify-between px-5 py-4">
           <button
             onClick={() => {
               stopCamera(streamRef.current);
@@ -239,14 +392,18 @@ export default function ScanScreen({
             {(["label", "food"] as AnalysisMode[]).map((m) => (
               <button
                 key={m}
-                onClick={() => phase === "idle" && setMode(m)}
+                type="button"
+                onClick={() => handleModeChange(m)}
+                disabled={phase !== "idle" && phase !== "error"}
                 className="px-3 py-1.5 rounded-full text-xs font-semibold transition-all"
                 style={{
                   background: mode === m ? "rgba(27,122,67,0.9)" : "transparent",
                   color: mode === m ? "white" : "rgba(255,255,255,0.6)",
+                  cursor: phase === "idle" || phase === "error" ? "pointer" : "not-allowed",
+                  opacity: phase === "idle" || phase === "error" ? 1 : 0.55,
                 }}
               >
-                {m === "label" ? "📋 Label" : "🍽️ Food"}
+                {m === "label" ? "📦 Package" : "🍛 Indian meal"}
               </button>
             ))}
           </div>
@@ -298,17 +455,50 @@ export default function ScanScreen({
           </div>
         </div>
 
+        {phase === "confirming" && pendingMeal ? (
+          <div className="absolute inset-x-3 bottom-3 top-20 flex min-h-0 flex-col gap-2">
+            {capturedImage ? (
+              <figure className="relative m-0 h-36 shrink-0 overflow-hidden rounded-[18px] border border-white/20 bg-black/70 shadow-2xl">
+                <img
+                  src={capturedImage}
+                  alt="Full scanned thali for dish selection"
+                  className="h-full w-full object-contain"
+                />
+                <figcaption className="absolute inset-x-0 bottom-0 flex items-center justify-between bg-gradient-to-t from-black/90 via-black/55 to-transparent px-3 pb-2 pt-8 text-white">
+                  <span className="text-xs font-extrabold">Your scanned thali</span>
+                  <span className="rounded-full bg-black/45 px-2 py-1 text-[9px] font-semibold text-white/80 backdrop-blur-sm">
+                    Use this photo as your guide
+                  </span>
+                </figcaption>
+              </figure>
+            ) : null}
+
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <MealConfirmationPanel
+                dishes={dishCatalogue}
+                items={pendingMeal.items}
+                suggestedItems={mealSuggestedItems}
+                loading={mealConfirmationLoading}
+                error={mealConfirmationError}
+                onCancel={handleRetry}
+                onSubmit={handleMealConfirmation}
+              />
+            </div>
+          </div>
+        ) : null}
+
         {/* Status bubble */}
+        {phase !== "confirming" ? (
         <div className="absolute bottom-6 left-0 right-0 flex justify-center">
           <div className="bg-black/50 backdrop-blur-md rounded-2xl px-5 py-3 mx-5 text-center max-w-[300px]">
             {phase === "idle" && (
               <p className="text-white text-sm font-medium">
                 {mode === "label"
-                  ? "Point camera at a product label or barcode"
-                  : "Point camera at your food or meal"}
+                  ? "Point camera at a packaged-food label"
+                  : "Fit the full Indian meal inside the frame"}
               </p>
             )}
-            {(phase === "capturing" || phase === "ocr" || phase === "analyzing" || phase === "generating") && (
+            {(phase === "capturing" || phase === "ocr" || phase === "analyzing" || phase === "ml" || phase === "generating") && (
               <div className="flex items-center justify-center gap-2">
                 <div className="w-4 h-4 border-2 border-[#F5A623] border-t-transparent rounded-full animate-spin" />
                 <p className="text-[#F5A623] text-sm font-semibold">{statusMsg}</p>
@@ -330,6 +520,7 @@ export default function ScanScreen({
             )}
           </div>
         </div>
+        ) : null}
       </div>
 
       {/* Bottom Controls */}

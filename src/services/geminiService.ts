@@ -6,6 +6,8 @@ import type {
   IngredientExplanation,
   AlternativeProduct,
   ChatMessage,
+  IndianDishOption,
+  MealItemInput,
   UserProfile,
 } from "../types";
 import { buildNutrients, calculateNutriScore, getGradeColors } from "./nutritionScoringService";
@@ -23,6 +25,90 @@ function imageDataUrlToGenerativePart(dataUrl: string) {
   return {
     inlineData: { data: base64Data ?? "", mimeType },
   };
+}
+
+function readRequiredNutrition(parsed: Record<string, unknown>) {
+  const keys = [
+    "calories",
+    "saturatedFat",
+    "sugars",
+    "sodium",
+    "fiber",
+    "protein",
+  ] as const;
+  const values: Record<(typeof keys)[number], number> = {
+    calories: 0,
+    saturatedFat: 0,
+    sugars: 0,
+    sodium: 0,
+    fiber: 0,
+    protein: 0,
+  };
+
+  for (const key of keys) {
+    const value = Number(parsed[key]);
+    if (parsed[key] === null || parsed[key] === undefined || !Number.isFinite(value) || value < 0) {
+      throw new Error(`AI analysis did not return a valid value for ${key}. Please retake the image.`);
+    }
+    values[key] = value;
+  }
+  return values;
+}
+
+// ─── Optional Indian meal recognition prefill ────────────────────────────────
+
+export async function suggestIndianMealItems(
+  imageDataUrl: string,
+  dishes: IndianDishOption[],
+): Promise<MealItemInput[]> {
+  const client = getClient();
+  const model = client.getGenerativeModel({ model: "gemini-2.0-flash" });
+  const allowed = dishes.map((dish) => ({
+    id: dish.id,
+    name: dish.name,
+    aliases: dish.aliases,
+  }));
+
+  const prompt = `Identify only the visible foods in this Indian meal image.
+Choose exclusively from this supported catalogue:
+${JSON.stringify(allowed)}
+
+Return JSON only in this exact shape:
+{"dishIds":["exact_catalogue_id"]}
+
+Rules:
+- Return at most 10 unique IDs.
+- Do not return nutrients, weights, ingredients, or foods outside the catalogue.
+- Omit uncertain items. The user will verify every suggestion.`;
+
+  const result = await model.generateContent([
+    prompt,
+    imageDataUrlToGenerativePart(imageDataUrl),
+  ]);
+  const responseText = result.response.text();
+
+  try {
+    const jsonText = responseText.replace(/```json?\n?/g, "").replace(/```/g, "").trim();
+    const parsed = JSON.parse(jsonText) as { dishIds?: unknown };
+    if (!Array.isArray(parsed.dishIds)) return [];
+
+    const byId = new Map(dishes.map((dish) => [dish.id, dish]));
+    const uniqueIds = Array.from(
+      new Set(parsed.dishIds.filter((id): id is string => typeof id === "string")),
+    ).slice(0, 10);
+
+    return uniqueIds.flatMap((dishId) => {
+      const dish = byId.get(dishId);
+      if (!dish) return [];
+      return [{
+        dishId,
+        portionGrams: dish.defaultPortion.grams,
+        portionBasis: "estimated" as const,
+      }];
+    });
+  } catch {
+    return [];
+  }
 }
 
 // ─── Packaged Food Label Analysis ─────────────────────────────────────────────
@@ -70,14 +156,8 @@ Be as accurate as possible. If you can read values from the image, use those. If
     throw new Error("Failed to parse AI response. Please try scanning again.");
   }
 
-  const nutrients = buildNutrients({
-    calories: Number(parsed.calories) || 0,
-    saturatedFat: Number(parsed.saturatedFat) || 0,
-    sugars: Number(parsed.sugars) || 0,
-    sodium: Number(parsed.sodium) || 0,
-    fiber: Number(parsed.fiber) || 0,
-    protein: Number(parsed.protein) || 0,
-  });
+  const nutritionValues = readRequiredNutrition(parsed);
+  const nutrients = buildNutrients(nutritionValues);
 
   const { score, grade } = calculateNutriScore(nutrients);
   const { gradeColor, gradeBg } = getGradeColors(grade);
@@ -90,7 +170,7 @@ Be as accurate as possible. If you can read values from the image, use those. If
     grade,
     gradeColor,
     gradeBg,
-    kcal: Number(parsed.calories) || 0,
+    kcal: nutritionValues.calories,
     servingSize: String(parsed.servingSize || "1 serving"),
     allergens: Array.isArray(parsed.allergens) ? parsed.allergens.map(String) : [],
     nutrients,
@@ -150,14 +230,8 @@ Be realistic with estimates. Base them on typical portion sizes visible in the i
     throw new Error("Failed to parse AI response. Please try again with a clearer image.");
   }
 
-  const nutrients = buildNutrients({
-    calories: Number(parsed.calories) || 0,
-    saturatedFat: Number(parsed.saturatedFat) || 0,
-    sugars: Number(parsed.sugars) || 0,
-    sodium: Number(parsed.sodium) || 0,
-    fiber: Number(parsed.fiber) || 0,
-    protein: Number(parsed.protein) || 0,
-  });
+  const nutritionValues = readRequiredNutrition(parsed);
+  const nutrients = buildNutrients(nutritionValues);
 
   const { score, grade } = calculateNutriScore(nutrients);
   const { gradeColor, gradeBg } = getGradeColors(grade);
@@ -172,7 +246,7 @@ Be realistic with estimates. Base them on typical portion sizes visible in the i
     grade,
     gradeColor,
     gradeBg,
-    kcal: Number(parsed.calories) || 0,
+    kcal: nutritionValues.calories,
     servingSize: String(parsed.servingSize || "1 serving"),
     allergens: Array.isArray(parsed.allergens) ? parsed.allergens.map(String) : [],
     nutrients,

@@ -27,17 +27,150 @@ export interface MLFeatureImportance {
   direction: "positive" | "negative";
 }
 
+export interface MLEstimatedNutrients {
+  calories: number;
+  saturatedFat: number;
+  sugars: number;
+  sodium: number;
+  fiber: number;
+  protein: number;
+}
+
+export interface MLTopPrediction {
+  label: string;
+  category: string;
+  relativeScore: number;
+}
+
 export interface MLPredictionResult {
   predictedFoodName?: string;
   category?: string;
   predictedGrade: "A" | "B" | "C" | "D" | "F";
   healthScore: number;
-  confidence: number;
+  confidence: number | null;
   modelName: string;
   modelArchitecture?: string;
+  inferenceSource: "trained_model" | "rule_based" | "heuristic_baseline";
+  explanationMethod?: "model_feature_importance" | "rule_contribution";
+  nutrientSource?: "provided_label_values" | "class_profile_estimate";
+  nutrientsUsed?: MLEstimatedNutrients;
   riskFactors?: MLRiskFactor[];
   featureImportance?: MLFeatureImportance[];
   healthNote?: string;
+  estimatedNutrients?: MLEstimatedNutrients;
+  allergens?: string[];
+  topPredictions?: MLTopPrediction[];
+}
+
+export interface MealNutrients {
+  calories: number;
+  protein: number;
+  fat: number;
+  carbohydrates: number;
+  fiber: number;
+  sugars: number;
+  saturatedFat: number;
+  sodium: number;
+}
+
+export interface MealNutrientEstimate {
+  estimated: MealNutrients;
+  minimum: MealNutrients;
+  maximum: MealNutrients;
+}
+
+export interface MealPortionEstimate {
+  selectedGrams: number;
+  minimumGrams: number;
+  maximumGrams: number;
+  basis:
+    | "standard_portion_profile"
+    | "user_estimated_weight"
+    | "user_measured_weight";
+  description: string;
+}
+
+export interface MealSourceReference {
+  id: string;
+  name: string;
+  url: string;
+}
+
+export interface MealProvenance {
+  catalogVersion: string;
+  profileStatus: "prototype_estimate";
+  sourceRefs: string[];
+  references: MealSourceReference[];
+  caveats: string[];
+}
+
+export interface MealAnalysisItem {
+  itemId: string;
+  dishId: string;
+  name: string;
+  category: string;
+  recognitionSource: "model" | "user_confirmed" | "user_selected" | string;
+  confidence?: number | null;
+  portion: MealPortionEstimate;
+  nutrients: MealNutrientEstimate;
+  allergens: string[];
+  provenance: MealProvenance;
+}
+
+export interface MealRecognitionStatus {
+  status: "recognized" | "low_confidence" | "model_not_available" | string;
+  modelLoaded: boolean;
+  modelName: string | null;
+  confidence: number | null;
+  message: string;
+  nextAction: "select_dishes" | "review_portions";
+}
+
+export interface IndianMealAnalysis {
+  analysisId: string;
+  status: "complete" | "needs_confirmation" | string;
+  requiresUserConfirmation: boolean;
+  requiresPortionConfirmation: boolean;
+  recognition: MealRecognitionStatus;
+  items: MealAnalysisItem[];
+  totals: MealNutrientEstimate;
+  units: {
+    calories: "kcal" | string;
+    protein: "g" | string;
+    fat: "g" | string;
+    carbohydrates: "g" | string;
+    fiber: "g" | string;
+    sugars: "g" | string;
+    saturatedFat: "g" | string;
+    sodium: "mg" | string;
+  };
+  limitations: string[];
+}
+
+export interface MealItemInput {
+  itemId?: string;
+  dishId: string;
+  portionGrams?: number;
+  servings?: number;
+  portionBasis?: "estimated" | "measured";
+}
+
+export interface IndianDishOption {
+  id: string;
+  name: string;
+  aliases: string[];
+  category: string;
+  defaultPortion: {
+    grams: number;
+    minimumGrams: number;
+    maximumGrams: number;
+    description: string;
+  };
+  nutrientsPer100g: MealNutrients;
+  allergens: string[];
+  nutrientDensityUncertaintyPercent: number;
+  caveats: string[];
+  profileStatus: "prototype_estimate";
 }
 
 export interface AnalyzedProduct {
@@ -60,6 +193,7 @@ export interface AnalyzedProduct {
   analysisMode: AnalysisMode;
   rawOcrText?: string;
   mlPrediction?: MLPredictionResult;
+  mealAnalysis?: IndianMealAnalysis;
 }
 
 export interface AlternativeProduct {

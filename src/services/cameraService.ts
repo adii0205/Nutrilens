@@ -36,23 +36,41 @@ export function pickFromGallery(): Promise<string> {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = "image/*";
+    input.style.display = "none";
+    document.body.appendChild(input);
+
+    const cleanup = () => input.remove();
+
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) {
+        cleanup();
         reject(new Error("No file selected"));
         return;
       }
       const reader = new FileReader();
       reader.onload = () => {
+        cleanup();
         if (typeof reader.result === "string") {
           resolve(reader.result);
         } else {
           reject(new Error("Failed to read file"));
         }
       };
-      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.onerror = () => {
+        cleanup();
+        reject(new Error("Failed to read file"));
+      };
       reader.readAsDataURL(file);
     };
+    input.addEventListener(
+      "cancel",
+      () => {
+        cleanup();
+        reject(new Error("No file selected"));
+      },
+      { once: true },
+    );
     input.click();
   });
 }

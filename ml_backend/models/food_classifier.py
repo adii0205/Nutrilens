@@ -116,38 +116,18 @@ FOOD_CATEGORIES = {
     }
 }
 
-class FoodClassifierML:
-    def __init__(self):
-        self.model_loaded = False
-        self._init_model()
+class FoodImageBaseline:
+    """Temporary RGB heuristic used until the trained Week 2 model is ready.
 
-    def _init_model(self):
-        """Attempts to load PyTorch pretrained vision backbone if available."""
-        try:
-            import torch
-            import torchvision.models as models
-            import torchvision.transforms as transforms
-            
-            self.transform = transforms.Compose([
-                transforms.Resize((224, 224)),
-                transforms.ToTensor(),
-                transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
-            ])
-            # Load MobileNetV3 small for ultra-fast CPU inference
-            self.backbone = models.mobilenet_v3_small(weights=models.MobileNet_V3_Small_Weights.DEFAULT)
-            self.backbone.eval()
-            self.torch = torch
-            self.model_loaded = True
-            print("✅ PyTorch MobileNetV3 Food Vision Backbone initialized!")
-        except Exception as e:
-            print(f"ℹ️ PyTorch vision model fallback mode active ({e})")
-            self.model_loaded = False
+    This class intentionally does not expose a confidence probability. Its
+    relative scores are useful for deterministic prototype behaviour only and
+    must not be interpreted as model accuracy or calibrated confidence.
+    """
+
+    model_loaded = False
 
     def predict_image(self, image_bytes: bytes):
-        """
-        Processes input image tensor and classifies into top food categories 
-        with confidence scores and nutritional estimates.
-        """
+        """Return a heuristic category and its class-level nutrient estimate."""
         img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
 
         # Color & texture feature extraction for deterministic vision representation
@@ -157,7 +137,7 @@ class FoodClassifierML:
 
         category_keys = list(FOOD_CATEGORIES.keys())
         
-        # Calculate visual similarity heuristics based on RGB spectrum
+        # Calculate visual similarity heuristics based on the RGB spectrum.
         # Green dominance -> Salad / Green Vegetables
         # Red/Orange dominance -> Curry / Fruit / Tomato Pasta
         # Yellow/Brown dominance -> Burger / Pastry / Grain Bowl
@@ -177,17 +157,14 @@ class FoodClassifierML:
                 score = 0.50 + ((r_avg + g_avg + b_avg) / 765.0) * 0.25
             scores.append(score)
 
-        # Softmax normalization
-        exp_scores = np.exp(scores)
-        probs = exp_scores / np.sum(exp_scores)
-
-        top_indices = np.argsort(probs)[::-1][:3]
+        top_indices = np.argsort(scores)[::-1][:3]
+        max_score = max(scores)
         top_predictions = []
         for idx in top_indices:
             cat_name = category_keys[idx]
             top_predictions.append({
                 "label": cat_name,
-                "confidence": round(float(probs[idx]) * 100, 1),
+                "relativeScore": round(float(scores[idx] / max_score) * 100, 1),
                 "category": FOOD_CATEGORIES[cat_name]["category"]
             })
 
@@ -197,8 +174,9 @@ class FoodClassifierML:
         return {
             "predictedFoodName": best_cat_name,
             "category": best_profile["category"],
-            "confidence": top_predictions[0]["confidence"],
-            "modelArchitecture": "MobileNetV3-FoodVision-ML" if self.model_loaded else "Color-Texture-CNN-ML",
+            "confidence": None,
+            "modelArchitecture": "Mean-RGB heuristic baseline",
+            "inferenceSource": "heuristic_baseline",
             "topPredictions": top_predictions,
             "estimatedNutrients": {
                 "calories": best_profile["calories"],

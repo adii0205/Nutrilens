@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "1.0.0",
+  "modelVersion": "segmenter_lraspp_grouped_v1",
+  "architecture": "lraspp_mobilenet_v3_large",
+  "checkpointRelativePath": ".ml_artifacts/models/iiith/segmenter_lraspp_grouped_v1/best.pt",
+  "dataset": {
+    "name": "IIIT-H Indian Thali Dataset (ITD)",
+    "sourceSplit": "train",
+    "trainImageCount": 5296,
+    "validationImageCount": 1015,
+    "validationFraction": 0.15,
+    "validationGrouping": "capture-minute view group",
+    "viewGroupOverlap": 0,
+    "classCountIncludingBackground": 51
+  },
+  "training": {
+    "epochs": 8,
+    "imageSize": 384,
+    "batchSize": 12,
+    "optimizer": "AdamW",
+    "initialLearningRate": 0.0003,
+    "scheduler": "CosineAnnealingLR",
+    "mixedPrecision": true,
+    "peakGpuMemoryMb": 2429.81
+  },
+  "bestValidation": {
+    "epoch": 8,
+    "loss": 0.062245,
+    "pixelAccuracy": 0.983336,
+    "meanIoUIncludingBackground": 0.823932,
+    "foregroundMeanIoU": 0.820744
+  }
+}
