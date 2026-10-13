@@ -94,13 +94,13 @@ class MealItemResult(BaseModel):
 
 class RecognitionResult(BaseModel):
     status: Literal[
-        "recognized", "low_confidence", "model_not_available", "user_confirmed"
+        "recognized", "low_confidence", "model_not_available", "not_a_meal", "user_confirmed"
     ]
     modelLoaded: bool
     modelName: str | None
     confidence: float | None = Field(default=None, ge=0, le=1)
     message: str
-    nextAction: Literal["select_dishes", "review_portions"]
+    nextAction: Literal["select_dishes", "review_portions", "retry_scan"]
 
 
 class MealAnalysisData(BaseModel):

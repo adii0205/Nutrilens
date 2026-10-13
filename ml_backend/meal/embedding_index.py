@@ -146,6 +146,39 @@ class OpenClipImageEncoder:
         self.effective_batch_size = current_batch_size
         return _normalize_rows(np.concatenate(outputs, axis=0))
 
+    def compare_image_to_text_groups(
+        self, image: Image.Image, prompt_groups: dict[str, Sequence[str]]
+    ) -> dict[str, float]:
+        """Compare a full image with semantic prompt groups using OpenCLIP."""
+
+        if not prompt_groups or any(not prompts for prompts in prompt_groups.values()):
+            raise ValueError("Each text group must contain at least one prompt.")
+        import open_clip
+
+        tokenizer = open_clip.get_tokenizer(self.model_name)
+        prompts = [prompt for group in prompt_groups.values() for prompt in group]
+        tokens = tokenizer(prompts).to(self.device)
+        image_tensor = self.preprocess(image.convert("RGB")).unsqueeze(0).to(self.device)
+        autocast = (
+            self._torch.autocast(device_type="cuda", dtype=self._torch.float16)
+            if self.device == "cuda"
+            else nullcontext()
+        )
+        with self._torch.inference_mode(), autocast:
+            image_features = self.model.encode_image(image_tensor).float()
+            text_features = self.model.encode_text(tokens).float()
+        image_features = image_features / image_features.norm(dim=-1, keepdim=True)
+        text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+        similarities = (image_features @ text_features.T).squeeze(0).cpu().numpy()
+
+        scores: dict[str, float] = {}
+        offset = 0
+        for name, group in prompt_groups.items():
+            group_scores = similarities[offset : offset + len(group)]
+            scores[name] = float(np.mean(group_scores))
+            offset += len(group)
+        return scores
+
 
 def _robust_class_filter(
     embeddings: np.ndarray,

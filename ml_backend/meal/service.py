@@ -223,7 +223,9 @@ class MealAnalysisService:
                 "modelName": attempt.model_name,
                 "confidence": attempt.confidence,
                 "message": attempt.message,
-                "nextAction": "select_dishes",
+                "nextAction": (
+                    "retry_scan" if attempt.status == "not_a_meal" else "select_dishes"
+                ),
             },
             "items": items,
             "totals": totals,
