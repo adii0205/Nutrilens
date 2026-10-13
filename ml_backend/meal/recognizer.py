@@ -67,6 +67,35 @@ def _masked_region_crop(image: Image.Image, mask: np.ndarray, bbox) -> Image.Ima
 class OpenClipMealRecognizer:
     """Lazy segmentation plus OpenCLIP verifier for user-editable suggestions."""
 
+    NOT_MEAL_PROMPTS = {
+        "indian_meal": (
+            "A photo of an Indian thali meal served on a plate with several dishes.",
+            "A photo of cooked Indian food served in bowls on a meal tray.",
+            "A close-up photo of a bowl of Indian curry or dal ready to eat.",
+            "A photo of fruit served ready to eat on a plate.",
+            "A photo of a single Indian dish served in a bowl.",
+        ),
+        "packaged_product": (
+            "A product photo of a sealed bag of potato chips or crisps.",
+            "A packaged snack food bag photographed against a plain background.",
+            "A packet of packaged food with branding and product text on the wrapper.",
+            "A retail food package, snack packet, or chips bag.",
+            "A photo of food packaging with a product label, not food served on a plate.",
+        ),
+        "document_or_label": (
+            "A close-up photo of a nutrition facts label printed on a package.",
+            "A photo of a menu, receipt, book page, or printed document.",
+            "A screenshot of text or a user interface on a phone screen.",
+        ),
+        "unrelated_object_or_scene": (
+            "A photo of household objects arranged on a table, not a meal.",
+            "A photo of an animal or pet.",
+            "A photo of a landscape, building, or outdoor scene.",
+            "A photo of clothing, electronics, or another non-food product.",
+        ),
+    }
+    PACKAGED_IMAGE_MARGIN = 0.025
+
     model_loaded = True
     model_name = "ITD-LRASPP-OpenCLIP-v1"
 
@@ -137,6 +166,27 @@ class OpenClipMealRecognizer:
             )
 
         segmenter, encoder, index, mapping, calibration = self._ensure_runtime()
+        domain_scores = encoder.compare_image_to_text_groups(
+            image, self.NOT_MEAL_PROMPTS
+        )
+        meal_score = domain_scores["indian_meal"]
+        non_meal_score = max(
+            score
+            for group, score in domain_scores.items()
+            if group != "indian_meal"
+        )
+        if non_meal_score >= meal_score + self.PACKAGED_IMAGE_MARGIN:
+            return RecognitionAttempt(
+                status="not_a_meal",
+                model_loaded=True,
+                model_name=self.model_name,
+                confidence=None,
+                predictions=(),
+                message=(
+                    "This image looks more like packaged food than an Indian meal. "
+                    "Switch to Package mode or scan a meal served on a plate."
+                ),
+            )
         segmentation = segmenter.predict(image)
         if not segmentation.regions:
             return RecognitionAttempt(

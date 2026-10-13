@@ -118,12 +118,12 @@ export interface MealAnalysisItem {
 }
 
 export interface MealRecognitionStatus {
-  status: "recognized" | "low_confidence" | "model_not_available" | string;
+  status: "recognized" | "low_confidence" | "model_not_available" | "not_a_meal" | string;
   modelLoaded: boolean;
   modelName: string | null;
   confidence: number | null;
   message: string;
-  nextAction: "select_dishes" | "review_portions";
+  nextAction: "select_dishes" | "review_portions" | "retry_scan";
 }
 
 export interface IndianMealAnalysis {

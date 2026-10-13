@@ -119,6 +119,10 @@ export default function ScanScreen({
         setStatusMsg("Checking the meal with the Indian dish pipeline...");
         const mealAnalysis = await analyzeIndianMeal(imageDataUrl);
 
+        if (mealAnalysis.recognition.status === "not_a_meal") {
+          throw new Error(mealAnalysis.recognition.message);
+        }
+
         if (
           mealAnalysis.requiresUserConfirmation ||
           mealAnalysis.requiresPortionConfirmation ||
